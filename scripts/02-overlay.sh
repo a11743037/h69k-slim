@@ -33,6 +33,37 @@ if [ "${WITH_DOCKER:-1}" = "0" ]; then
 	warn "WITH_DOCKER=0：已从设备定义里摘掉 dockerd / docker / luci-app-dockerman（镜像小约 200MB）"
 fi
 
+# --- 2c. 让 u-boot 包真正被编出来（否则镜像组装时缺 u-boot-rockchip.bin）---
+# u-boot 的每个变体都是 HIDDEN 包（uboot-rockchip/Makefile 里 HIDDEN:=1）。
+# hidden 符号在 .config 里写 =y 会被 kconfig 直接忽略，唯一入口是 BUILD_DEVICES
+# 触发的 "DEFAULT := y if ..._DEVICE_<设备>"。我们复用的是 H68K 变体，设备不在它的
+# 列表里，所以往 BUILD_DEVICES 里补一行。
+UBOOT_MK="$SRC_DIR/package/boot/uboot-rockchip/Makefile"
+if [ ! -f "$UBOOT_MK" ]; then
+	warn "找不到 $UBOOT_MK，跳过（u-boot 可能编不出来）"
+elif grep -q 'hinlink_opc-h69k' "$UBOOT_MK"; then
+	log "u-boot 变体已包含 hinlink_opc-h69k，跳过"
+else
+	python3 - "$UBOOT_MK" <<'PY' || die "给 u-boot 补 BUILD_DEVICES 失败"
+import sys
+p = sys.argv[1]
+lines = open(p, encoding='utf-8').read().split('\n')
+try:
+    start = next(i for i, l in enumerate(lines) if l.startswith('define U-Boot/hinlink-h68k-rk3568'))
+except StopIteration:
+    sys.exit('没找到 U-Boot/hinlink-h68k-rk3568 块（上游可能改名）')
+for i in range(start, min(start + 12, len(lines))):
+    if lines[i].strip() == 'hinlink_h68k':
+        lines[i] = '    hinlink_h68k \\'
+        lines.insert(i + 1, '    hinlink_opc-h69k')
+        break
+else:
+    sys.exit('没找到 hinlink_h68k 那一行 BUILD_DEVICES')
+open(p, 'w', encoding='utf-8', newline='\n').write('\n'.join(lines))
+print('  已把 hinlink_opc-h69k 加入 hinlink-h68k-rk3568 的 BUILD_DEVICES')
+PY
+fi
+
 # --- 3. 本地包 ---
 mkdir -p "$SRC_DIR/package/h69k"
 for p in "$PROJECT_DIR"/packages/*/; do
