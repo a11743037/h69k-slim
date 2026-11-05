@@ -21,7 +21,9 @@ CONFIG_TARGET_EXT4_RESERVED_PCT=1
 CONFIG_TARGET_IMAGES_GZIP=y
 
 # ---------- u-boot（设备定义复用了 H68K 变体，必须显式选中才会编） ----------
-CONFIG_PACKAGE_uboot-rockchip-hinlink-h68k-rk3568=y
+# 包名规则来自 include/u-boot.mk: define Package/u-boot-$(1)，$(1) 是变体名，
+# 所以是 u-boot-hinlink-h68k-rk3568，不是 uboot-rockchip-xxx（后者不存在，会被 defconfig 丢掉）。
+CONFIG_PACKAGE_u-boot-hinlink-h68k-rk3568=y
 
 # ---------- 包管理：25.12 起默认 APK ----------
 CONFIG_USE_APK=y

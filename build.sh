@@ -28,7 +28,12 @@ done
 [ ${#STEPS[@]} -gt 0 ] || STEPS=(01 02 03 04 05)
 
 require_linux
-mkdir -p "$DIST_DIR"
+mkdir -p "$DIST_DIR" "$BUILD_DIR"
+
+# 从第一行就落日志：之前只在 04 阶段 tee，01/02/03 报错时 build.log 根本不存在，
+# CI 里连日志都拿不到（"No files were found with the provided path: build/build.log"）。
+exec > >(tee -a "$BUILD_DIR/build.log") 2>&1
+log "日志：$BUILD_DIR/build.log"
 
 log "工程：$PROJECT_DIR"
 log "源码：$SRC_DIR（$OWRT_REF）  并行：$JOBS  阶段：${STEPS[*]}"

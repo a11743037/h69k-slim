@@ -9,8 +9,8 @@ cd "$SRC_DIR"
 log "预下载源码包（失败不影响编译，编译时会自动重试）"
 make -j"$JOBS" download || warn "部分源码包下载失败，交给编译阶段的重试"
 
-log "开始编译，-j$JOBS（日志同时写入 $BUILD_DIR/build.log）"
-if ! make -j"$JOBS" 2>&1 | tee "$BUILD_DIR/build.log"; then
+log "开始编译，-j$JOBS（日志已由 build.sh 全局 tee 到 $BUILD_DIR/build.log）"
+if ! make -j"$JOBS"; then
 	die "编译失败。查 $BUILD_DIR/build.log，常见原因：
    1) dtb 报 'rk3568-hinlink-opc.dtsi: No such file' -> 内核版本不含该 dtsi，改用 OWRT_REF=main
    2) 包名不存在 -> 看 03 步体检输出
