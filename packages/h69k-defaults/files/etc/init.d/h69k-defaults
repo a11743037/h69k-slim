@@ -1,0 +1,16 @@
+#!/bin/sh /etc/rc.common
+#
+# H69K 出厂默认值兜底：无线配置要等网卡驱动 probe 完才由 mac80211 生成，
+# 首次启动那一刻可能还不存在，所以每次启动再补一次（幂等，做过即退出）。
+
+START=98
+STOP=10
+USE_PROCD=0
+
+start() {
+	[ -x /usr/libexec/h69k-factory ] && /usr/libexec/h69k-factory
+}
+
+boot() {
+	start
+}

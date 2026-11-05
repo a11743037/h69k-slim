@@ -1,0 +1,45 @@
+#!/bin/sh
+#
+# H69K 出厂默认值（幂等）——首次启动调一次，之后每次启动再兜底调一次
+#
+# 只做两件事，都带"做过即退出"的标记，用户自己改过之后不会被覆盖：
+#   1) root 密码 = password（MD5-crypt，musl / dropbear / LuCI 都认）
+#   2) 无线默认开启：SSID=H69K，WPA2-PSK，密码 password
+#
+# 无线部分要求 /etc/config/wireless 已存在（网卡就绪后由 mac80211 hotplug 生成），
+# 没生成时直接返回且不写标记，交给 /etc/init.d/h69k-defaults 下次重试。
+
+MARK_ROOT=/etc/.h69k-rootpass-done
+MARK_WIFI=/etc/.h69k-wifi-done
+
+# ---------------- 1. root 密码 ----------------
+if [ ! -f "$MARK_ROOT" ] && [ -f /etc/shadow ]; then
+	if grep -q '^root:' /etc/shadow; then
+		cp -f /etc/shadow /etc/shadow.factory.bak 2>/dev/null
+		sed -i 's|^root:[^:]*:|root:$1$h69k$ho9gS4WhFcKzdLjUqnjbM0:|' /etc/shadow
+		touch "$MARK_ROOT"
+		logger -t h69k-defaults "root 密码已设为出厂默认 password"
+	fi
+fi
+
+# ---------------- 2. 无线 ----------------
+if [ ! -f "$MARK_WIFI" ] && [ -f /etc/config/wireless ]; then
+	n=0
+	for s in $(uci -q show wireless 2>/dev/null | sed -n 's/^\(wireless\.[^.=]*\)=wifi-iface$/\1/p'); do
+		[ "$(uci -q get "$s.mode")" = "ap" ] || continue
+		uci -q set "$s.ssid=H69K"
+		uci -q set "$s.encryption=psk2"
+		uci -q set "$s.key=password"
+		n=$((n + 1))
+	done
+
+	if [ "$n" -gt 0 ]; then
+		sed -i '/^[[:space:]]*option disabled/d' /etc/config/wireless
+		uci -q commit wireless
+		touch "$MARK_WIFI"
+		logger -t h69k-defaults "无线默认值：SSID=H69K psk2/password（$n 个 AP）"
+		ubus -S call network.wireless status >/dev/null 2>&1 && wifi reload >/dev/null 2>&1
+	fi
+fi
+
+exit 0

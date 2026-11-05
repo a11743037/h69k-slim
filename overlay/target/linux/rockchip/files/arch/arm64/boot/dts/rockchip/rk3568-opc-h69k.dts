@@ -1,0 +1,227 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * HINLINK OPC-H69K (RK3568) —— 精简固件专用设备树
+ *
+ * 上游 OpenWrt main（内核 6.18）已自带 rk3568-hinlink-opc.dtsi，
+ * 本文件只描述 H69K 与公共 dtsi 的差异，因此不需要给内核打任何补丁：
+ * 把本文件放进 target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
+ * 后，OpenWrt 的 image.mk 会直接用 cpp + dtc 把它编成 image-rk3568-opc-h69k.dtb。
+ *
+ * 保留的功能：5G（USB/QMI，无需 dts 节点）、Wi-Fi（M.2 PCIe mt7921）、
+ *             双 2.5G 网口、PWM 风扇、四档温控、SSD1306 OLED（i2c5）。
+ */
+
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/pinctrl/rockchip.h>
+
+#include "rk3568-hinlink-opc.dtsi"
+
+/ {
+	model = "HINLINK OPC-H69K Board";
+	compatible = "hinlink,opc-h69k", "rockchip,rk3568";
+
+	aliases {
+		ethernet0 = &gmac1;
+	};
+
+	/* PWM 风扇：pwm0 -> 4pin 风扇。cooling-levels 与温控 map 一一对应 */
+	fan: pwm-fan {
+		compatible = "pwm-fan";
+		cooling-levels = <0 90 120 165 210 255>;
+		#cooling-cells = <2>;
+		pwms = <&pwm0 0 50000 0>;
+	};
+
+	/* SATA 供电（保留节点，驱动是否安装由镜像包列表决定） */
+	vcc5v0_ahci: vcc5v0-ahci {
+		compatible = "regulator-fixed";
+		enable-active-high;
+		gpio = <&gpio0 RK_PC5 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&sata_pwr_en>;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		regulator-name = "vcc5v0_ahci";
+		vin-supply = <&vcc5v0_sys>;
+	};
+
+	/* SDIO 无线（aic8800 类模组才用得到；M.2 mt7921 走 PCIe，不依赖此节点） */
+	sdio_pwrseq: sdio-pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		clocks = <&rk809 1>;
+		clock-names = "ext_clock";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_enable>;
+		post-power-on-delay-ms = <300>;
+		power-off-delay-us = <5000000>;
+		reset-gpios = <&gpio3 RK_PA0 GPIO_ACTIVE_LOW>;
+	};
+};
+
+/* SoC 温度传感器：过热直接关机（mode 0） */
+&tsadc {
+	status = "okay";
+	rockchip,hw-tshut-mode = <0>;
+};
+
+/*
+ * 四档风扇曲线 45/55/65/75℃，回差 4℃。
+ * cooling-maps 不能叫 map0/map1 —— 基础 dtsi 已占用这两个节点名，
+ * dtc 会静默合并同名节点，导致档位丢失。
+ */
+&cpu_thermal {
+	trips {
+		fan_trip1: fan-trip1 {
+			temperature = <45000>;
+			hysteresis = <4000>;
+			type = "active";
+		};
+		fan_trip2: fan-trip2 {
+			temperature = <55000>;
+			hysteresis = <4000>;
+			type = "active";
+		};
+		fan_trip3: fan-trip3 {
+			temperature = <65000>;
+			hysteresis = <4000>;
+			type = "active";
+		};
+		fan_trip4: fan-trip4 {
+			temperature = <75000>;
+			hysteresis = <4000>;
+			type = "active";
+		};
+	};
+
+	cooling-maps {
+		fan-map1 {
+			trip = <&fan_trip1>;
+			cooling-device = <&fan 0 1>;
+		};
+		fan-map2 {
+			trip = <&fan_trip2>;
+			cooling-device = <&fan 1 2>;
+		};
+		fan-map3 {
+			trip = <&fan_trip3>;
+			cooling-device = <&fan 2 3>;
+		};
+		fan-map4 {
+			trip = <&fan_trip4>;
+			cooling-device = <&fan 3 4>;
+		};
+	};
+};
+
+/* 千兆/2.5G 网口（gmac1 + RTL 系 PHY） */
+&gmac1 {
+	assigned-clocks = <&cru SCLK_GMAC1_RX_TX>, <&cru SCLK_GMAC1>;
+	assigned-clock-parents = <&cru SCLK_GMAC1_RGMII_SPEED>;
+	assigned-clock-rates = <0>, <125000000>;
+	clock_in_out = "output";
+	phy-mode = "rgmii-id";
+	pinctrl-names = "default";
+	pinctrl-0 = <&gmac1m1_miim
+		     &gmac1m1_tx_bus2
+		     &gmac1m1_rx_bus2
+		     &gmac1m1_rgmii_clk
+		     &gmac1m1_rgmii_bus>;
+	snps,reset-gpio = <&gpio1 RK_PB0 GPIO_ACTIVE_LOW>;
+	snps,reset-active-low;
+	snps,reset-delays-us = <0 20000 100000>;
+	tx_delay = <0x4f>;
+	rx_delay = <0x26>;
+	phy-handle = <&rgmii_phy1>;
+	status = "okay";
+};
+
+&mdio1 {
+	rgmii_phy1: ethernet-phy@0 {
+		compatible = "ethernet-phy-ieee802.3-c22";
+		reg = <0x0>;
+	};
+};
+
+&pinctrl {
+	sata {
+		sata_pwr_en: sata-pwr-en {
+			rockchip,pins = <0 RK_PC5 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	sdio-pwrseq {
+		wifi_enable: wifi-enable {
+			rockchip,pins = <3 RK_PA0 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		wifi_host_wake: wifi-host-wake {
+			rockchip,pins = <3 RK_PD5 RK_FUNC_GPIO &pcfg_pull_down>;
+		};
+	};
+};
+
+&pwm0 {
+	status = "okay";
+};
+
+&sata0 {
+	target-supply = <&vcc5v0_ahci>;
+};
+
+&sdmmc2 {
+	bus-width = <4>;
+	disable-wp;
+	cap-sd-highspeed;
+	cap-sdio-irq;
+	keep-power-in-suspend;
+	mmc-pwrseq = <&sdio_pwrseq>;
+	non-removable;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdmmc2m0_bus4 &sdmmc2m0_cmd &sdmmc2m0_clk>;
+	sd-uhs-sdr12;
+	sd-uhs-sdr25;
+	sd-uhs-sdr50;
+	sd-uhs-sdr104;
+	vmmc-supply = <&vcc3v3_sys>;
+	vqmmc-supply = <&vcc_1v8>;
+	status = "okay";
+
+	sdio_wifi@0 {
+		reg = <0>;
+		interrupt-parent = <&gpio3>;
+		interrupts = <RK_PD5 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "host-wake";
+		pinctrl-names = "default";
+		pinctrl-0 = <&wifi_host_wake>;
+	};
+};
+
+/* 调试串口不用，避免和前面板 UART 抢引脚 */
+&uart0 {
+	status = "disabled";
+};
+
+/* SSD1306 0.91" 128x32 OLED 挂在 i2c5 -> /dev/i2c-5（luci-app-oled 依赖） */
+&i2c5 {
+	status = "okay";
+};
+
+/*
+ * 上游 dtsi 打开了 i2c2 且复用 i2c2m1：
+ *   i2c2m1_scl = gpio0 RK_PC4 = PCIe 3.3V 使能
+ *   i2c2m1_sda = gpio0 RK_PC5 = SATA 5V 使能
+ * 本板无 i2c2 器件，关掉以免和供电脚抢引脚。
+ */
+&i2c2 {
+	/delete-property/ pinctrl-names;
+	/delete-property/ pinctrl-0;
+	status = "disabled";
+};
+
+/* PCIe 3.3V 上电延时，与厂商固件一致 */
+&vcc3v3_pi6c_05 {
+	startup-delay-us = <5000>;
+};

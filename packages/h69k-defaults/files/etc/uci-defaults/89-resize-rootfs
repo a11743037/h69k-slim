@@ -1,0 +1,22 @@
+#!/bin/sh
+#
+# 根分区在线扩容（一次性，幂等）
+#
+# 背景：镜像里的 rootfs 分区是 CONFIG_TARGET_ROOTFS_PARTSIZE MB，
+# 正常情况下 mke2fs 就是按这个大小建的，文件系统已经占满分区，本脚本是空操作。
+# 但如果某次 mke2fs 只按实际内容建了 fs（例如换了 image.mk 的实现），
+# 分区里就会剩一大截空闲，装插件立刻"空间不足"。
+# 这里做一次 online resize 兜底，ext4 支持挂载状态下扩容。
+
+ROOTDEV="$(awk '$2 == "/" && $3 ~ /^ext4$/ { print $1; exit }' /proc/mounts)"
+case "$ROOTDEV" in
+	/dev/mmcblk*p*|/dev/sd*|/dev/nvme*p*)
+		command -v resize2fs >/dev/null 2>&1 || exit 0
+		before="$(df -m / | awk 'NR==2{print $2}')"
+		resize2fs "$ROOTDEV" >/dev/null 2>&1 || true
+		after="$(df -m / | awk 'NR==2{print $2}')"
+		logger -t h69k-defaults "根分区 $ROOTDEV: ${before}MB -> ${after}MB"
+		;;
+esac
+
+exit 0

@@ -1,0 +1,91 @@
+name: build-h69k-slim
+
+# 没有 Linux 机器时用这个：推到 GitHub 后手动触发，云端编译 2~4 小时，
+# 产物在 Actions 的 Artifacts 里下载（含可直刷的 .img）。
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "OpenWrt 分支/标签（默认 main）"
+        required: false
+        default: "main"
+      commit:
+        description: "锁定提交（留空则用分支最新）"
+        required: false
+        default: ""
+      rootfs_mb:
+        description: "根分区大小 MB（默认 3072，要装 Docker 别小于 2048）"
+        required: false
+        default: "3072"
+      with_docker:
+        description: "带 Docker（0 = 不带，编译快约 20 分钟、镜像小 200MB）"
+        required: false
+        default: "1"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装构建依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang flex bison g++ gawk \
+            gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev \
+            rsync unzip zlib1g-dev file wget qemu-utils \
+            libelf-dev ccache
+          sudo timedatectl set-timezone Asia/Shanghai
+
+      # GitHub 托管的 ubuntu runner 只有 14GB 可用盘，而 OpenWrt 全量编译要 25~35GB。
+      # 不清盘必然死在 "No space left on device"。这一步能腾出 25~30GB。
+      - name: 腾出磁盘空间
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
+                      /usr/local/lib/node_modules /opt/az /usr/lib/jvm || true
+          sudo apt-get clean
+          df -h /
+
+      - name: 编译
+        env:
+          OWRT_REF: ${{ inputs.ref }}
+          OWRT_COMMIT: ${{ inputs.commit }}
+          ROOTFS_PARTSIZE: ${{ inputs.rootfs_mb }}
+          WITH_DOCKER: ${{ inputs.with_docker }}
+          JOBS: 4
+        run: |
+          chmod +x build.sh scripts/*.sh
+          ./build.sh
+
+      - name: 上传镜像
+        uses: actions/upload-artifact@v4
+        with:
+          name: h69k-slim-image
+          path: |
+            dist/*.img.gz
+            dist/*.sha256
+            dist/*.buildinfo
+          retention-days: 14
+          compression-level: 0
+
+      - name: 上传离线插件包
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: h69k-slim-packages
+          path: dist/packages/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # 编译挂了也要能拿到日志，否则只能看到 "Process completed with exit code 2"
+      - name: 失败时上传编译日志
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-log
+          path: build/build.log
+          retention-days: 7
+          if-no-files-found: ignore

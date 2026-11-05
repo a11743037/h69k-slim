@@ -1,0 +1,8 @@
+build/
+dist/*.img
+dist/*.img.gz
+dist/*.sha256
+dist/*.buildinfo
+dist/packages/
+*.log
+.DS_Store

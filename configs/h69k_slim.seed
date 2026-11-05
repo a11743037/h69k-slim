@@ -1,0 +1,56 @@
+# H69K 精简固件 —— 配置种子（交给 defconfig 展开）
+#
+# 用法：cp 到 openwrt/.config 后 make defconfig
+# 这里只写"与默认值不同"的选项，其余交给 OpenWrt 默认值，跨版本升级时不会大面积失效。
+
+# ---------- 目标平台与机型 ----------
+CONFIG_TARGET_rockchip=y
+CONFIG_TARGET_rockchip_armv8=y
+CONFIG_TARGET_rockchip_armv8_DEVICE_hinlink_opc-h69k=y
+
+# ---------- 分区与文件系统 ----------
+# 16MB boot + 3072MB rootfs(ext4)。
+# 为什么是 3GB：Docker 引擎（dockerd + 镜像 + 容器层）本身就吃 200MB 起，1GB 根分区装完
+# dockerd 再拉两个镜像就满了。32GB eMMC 用 3GB，还剩 29GB 可以后续建数据分区。
+# 不要 Docker 时：WITH_DOCKER=0 ./build.sh 02 03 04 05，并可把这里改回 1024。
+CONFIG_TARGET_KERNEL_PARTSIZE=16
+CONFIG_TARGET_ROOTFS_PARTSIZE=3072
+CONFIG_TARGET_ROOTFS_EXT4FS=y
+CONFIG_TARGET_ROOTFS_SQUASHFS=n
+CONFIG_TARGET_EXT4_RESERVED_PCT=1
+CONFIG_TARGET_IMAGES_GZIP=y
+
+# ---------- u-boot（设备定义复用了 H68K 变体，必须显式选中才会编） ----------
+CONFIG_PACKAGE_uboot-rockchip-hinlink-h68k-rk3568=y
+
+# ---------- 包管理：25.12 起默认 APK ----------
+CONFIG_USE_APK=y
+
+# ---------- LuCI 主体 ----------
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-app-firewall=y
+CONFIG_PACKAGE_luci-app-package-manager=y
+CONFIG_LUCI_LANG_zh_Hans=y
+CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y
+CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y
+
+# ---------- 插件导入所需的工具链 ----------
+CONFIG_PACKAGE_ca-bundle=y
+CONFIG_PACKAGE_i2c-tools=y
+CONFIG_PACKAGE_kmod-usb-storage=y
+CONFIG_PACKAGE_kmod-fs-ext4=y
+CONFIG_PACKAGE_kmod-fs-vfat=y
+CONFIG_PACKAGE_block-mount=y
+CONFIG_PACKAGE_e2fsprogs=y
+
+# ---------- 明确剔除（保持镜像精简） ----------
+CONFIG_PACKAGE_luci-app-opkg=n
+CONFIG_PACKAGE_luci-app-ttyd=n
+CONFIG_PACKAGE_luci-app-upnp=n
+CONFIG_PACKAGE_luci-app-ddns=n
+CONFIG_PACKAGE_luci-app-wol=n
+CONFIG_PACKAGE_openssh-sftp-server=n
+CONFIG_PACKAGE_htop=n
+CONFIG_PACKAGE_nano=n
+CONFIG_PACKAGE_kmod-ata-ahci-dwc=n

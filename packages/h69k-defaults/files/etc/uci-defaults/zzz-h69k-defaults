@@ -1,0 +1,60 @@
+#!/bin/sh
+#
+# H69K 首次启动设置（uci-defaults 首次启动执行一次，之后整个目录被清掉）
+#
+# 顺序安排：文件名 zzz- 前缀排在 OpenWrt 自带的 zzz-default-settings 之后。
+
+. /lib/functions/system.sh 2>/dev/null
+
+# ===== 1. 主机名 / 时区 / NTP =====
+hn="H69K"
+[ -r /proc/device-tree/model ] && {
+	m="$(tr -d '\000' < /proc/device-tree/model)"
+	case "$m" in
+		*H69K*) hn="H69K" ;;
+		*)      hn="H69K" ;;
+	esac
+}
+
+uci -q batch <<EOF
+	set system.@system[0].hostname='$hn'
+	set system.@system[0].timezone='CST-8'
+	set system.@system[0].zonename='Asia/Shanghai'
+	delete system.ntp.server
+	add_list system.ntp.server='ntp1.aliyun.com'
+	add_list system.ntp.server='ntp.tencent.com'
+	add_list system.ntp.server='ntp.ntsc.ac.cn'
+	commit system
+EOF
+
+# ===== 2. 两个网口 =====
+# 5G 接口**不在这里写死**：modemd（modem-pro）的 auto_wan 会在模组上线后
+# 自动创建 modem<N>（proto=modem_pro）并挂进防火墙 wan 区。
+# 这里再手工建一个 proto=qmi 的 wwan 会和 modemd 抢同一个 /dev/cdc-wdm0，
+# 表现是"拨号器每轮 QMUXError 0xe、接口拿不到地址"。
+uci -q batch <<EOF
+	set network.lan=interface
+	set network.lan.device='eth0'
+	set network.lan.proto='static'
+	set network.lan.ipaddr='192.168.1.1'
+	set network.lan.netmask='255.255.255.0'
+	set network.lan.ip6assign='60'
+
+	set network.wan=interface
+	set network.wan.device='eth1'
+	set network.wan.proto='dhcp'
+	set network.wan.auto='1'
+	commit network
+EOF
+
+# ===== 3. 无线默认开启 =====
+# mac80211 生成的 /etc/config/wireless 默认带 option disabled '1'
+[ -f /etc/config/wireless ] && sed -i '/^[[:space:]]*option disabled/d' /etc/config/wireless
+
+# ===== 4. root 密码 + 无线 SSID/密码 =====
+[ -x /usr/libexec/h69k-factory ] && /usr/libexec/h69k-factory
+
+# ===== 5. LuCI 缓存 =====
+rm -rf /tmp/luci-modulecache /tmp/luci-indexcache
+
+exit 0

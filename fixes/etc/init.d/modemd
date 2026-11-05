@@ -1,0 +1,51 @@
+#!/bin/sh /etc/rc.common
+#
+# modemd —— 5G 模组管理器（modem-pro）
+#
+# 【为什么这个文件是本工程提供的】
+#   modem-pro 上游（commit 397e014）的 Makefile 第 213 行要安装
+#     files/packaging/openwrt/files/etc/init.d/modemd
+#   但仓库里该文件已缺失（只剩 lib/netifd/proto/quectel.sh）。
+#   直接编会在 INSTALL_BIN 这一步报 "No such file or directory"。
+#   本工程补一份等价脚本，02-overlay.sh 在文件缺失时才写入，不覆盖上游将来补回的版本。
+#
+# 守护进程在前台运行（自己处理 SIGTERM / 写 pid 文件），因此不需要 procd 的 pidfile 参数。
+
+START=96
+STOP=10
+USE_PROCD=1
+
+PROG=/usr/bin/modemd
+CONF=/etc/modemd/config.toml
+
+start_service() {
+	[ -x "$PROG" ] || {
+		logger -t modemd "缺少 $PROG，跳过启动"
+		return 1
+	}
+	[ -f "$CONF" ] || {
+		logger -t modemd "缺少 $CONF，跳过启动"
+		return 1
+	}
+
+	procd_open_instance
+	procd_set_param command "$PROG" -config "$CONF"
+	# 崩溃自愈：1 小时内最多重启 5 次，间隔 10s，避免坏配置下无限重启刷日志
+	procd_set_param respawn 3600 5 10
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	# 配置文件改动触发 reload（procd 会重启实例）
+	procd_set_param file "$CONF"
+	procd_close_instance
+}
+
+reload_service() {
+	logger -t modemd "配置已变更，重启 modemd"
+	stop
+	start
+}
+
+service_triggers() {
+	# 模组热插拔：USB 串口出现后让 modemd 尽快重新枚举
+	procd_add_reload_trigger "modemd"
+}
